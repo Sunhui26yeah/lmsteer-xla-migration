@@ -190,6 +190,38 @@ class LMSteerBase(nn.Module):
             self.steer.projector2.data = self.steer.projector2.to(fp32)
         return text
 
+    def generate_samples(self, prompt, steer_values, num_samples,
+                         min_length=20, max_length=100, seed=None,
+                         temperature=1, top_p=1):
+        '''
+        Draws num_samples sampled continuations of one prompt in a single
+        batched generate call (used on XLA instead of one call per sample).
+        '''
+        if seed is not None:
+            set_seed(seed)
+        steer_values = torch.Tensor(steer_values).to(self.device)
+        self.steer.set_value(steer_values[None])
+        extra_kwargs = {}
+        if self.device.type == "xla":
+            from .xla_generation import patch_hf_generation_for_xla
+            patch_hf_generation_for_xla()
+            extra_kwargs["stopping_criteria"] = StoppingCriteriaList(
+                [XLAStepBarrier()])
+        with torch.no_grad():
+            inputs = self.tokenizer(
+                prompt, return_tensors="pt").to(self.device)
+            tokens = self.model.generate(
+                **inputs,
+                num_beams=1, num_beam_groups=1,
+                do_sample=True, temperature=temperature, top_p=top_p,
+                min_length=min_length, max_length=max_length,
+                num_return_sequences=num_samples,
+                pad_token_id=self.tokenizer.pad_token_id,
+                **extra_kwargs,
+            )
+        return [self.tokenizer.decode(_t, skip_special_tokens=True)
+                for _t in tokens.cpu()]
+
     def state_dict(self):
         return self.steer.state_dict()
 

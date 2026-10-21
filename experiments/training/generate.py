@@ -21,6 +21,21 @@ def generate(prompt_data, steer_values, tokenizer, model,
         prompt_text = _prompt["prompt"]["text"]
         token_length = tokenizer(prompt_text,
                                  return_tensors="pt")["input_ids"].shape[1]
+        if args.xla:
+            # one batched call for all samples of the prompt (same sampling
+            # distribution; seed 0 per prompt instead of seeds 0..prompt_num-1)
+            outputs = model.generate_samples(
+                prompt_text, steer_values, prompt_num, seed=0,
+                max_length=token_length+prompt_length,
+                min_length=token_length+prompt_length,
+                temperature=temperature, top_p=top_p,
+            )
+            _prompt["generations"] = [
+                {"text": _output[len(prompt_text):]} for _output in outputs]
+            if args.verbose:
+                print(prompt_text)
+                print(_prompt["generations"])
+            continue
         for _i in range(prompt_num):
             output = model.generate(
                 prompt_text,
