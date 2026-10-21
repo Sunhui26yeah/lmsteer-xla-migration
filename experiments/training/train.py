@@ -52,8 +52,19 @@ def main(args):
         if args.dummy_steer is not None:
             batch_stance[:, args.dummy_steer] = 1
         batch_text = batch["text"]
-        tokenized = tokenizer(batch_text, padding=True,
-                              max_length=args.max_length, truncation=True)
+        labels = None
+        if args.xla:
+            # static shape on XLA: pad to max_length, but keep the loss of
+            # padding=True by ignoring positions beyond the longest sequence
+            tokenized = tokenizer(batch_text, padding="max_length",
+                                  max_length=args.max_length, truncation=True)
+            longest = max(sum(_m) for _m in tokenized["attention_mask"])
+            labels = torch.LongTensor(tokenized["input_ids"])
+            labels[:, longest:] = -100
+            labels = labels.to(device)
+        else:
+            tokenized = tokenizer(batch_text, padding=True,
+                                  max_length=args.max_length, truncation=True)
         input_ids = torch.LongTensor(tokenized["input_ids"]).to(device)
 
         optimizer.zero_grad()
@@ -65,7 +76,7 @@ def main(args):
             ):
                 loss = model(
                     input_ids, attention_mask,
-                    batch_stance.float()
+                    batch_stance.float(), labels
                 ).loss
                 regularization_term = model.regularization_term()
             scaler.scale(loss + args.regularization * regularization_term
@@ -75,7 +86,7 @@ def main(args):
         else:
             loss = model(
                 input_ids, attention_mask,
-                batch_stance.float()
+                batch_stance.float(), labels
             ).loss
             regularization_term = model.regularization_term()
             (loss + args.regularization * regularization_term).backward()
