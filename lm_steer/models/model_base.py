@@ -170,6 +170,8 @@ class LMSteerBase(nn.Module):
                 prompt, return_tensors="pt").to(self.device)
             extra_kwargs = {}
             if self.device.type == "xla":
+                from .xla_generation import patch_hf_generation_for_xla
+                patch_hf_generation_for_xla()
                 extra_kwargs["stopping_criteria"] = StoppingCriteriaList(
                     [XLAStepBarrier()])
             text = self.model.generate(
