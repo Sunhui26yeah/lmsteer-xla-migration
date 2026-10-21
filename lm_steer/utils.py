@@ -7,6 +7,7 @@ import numpy as np
 def get_device(args):
     if getattr(args, "xla", False):
         import torch_xla
+        import torch_xla.backends
         # match CUDA fp32 matmuls (TF32 off by default) instead of the TPU's
         # reduced-precision default for f32
         torch_xla.backends.set_mat_mul_precision("highest")

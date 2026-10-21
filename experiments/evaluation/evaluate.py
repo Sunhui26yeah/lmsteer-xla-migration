@@ -270,6 +270,7 @@ def main(generations_file, output_file, metrics, extra, device_name):
     metricset = set(metrics.strip().lower().split(","))
     if device_name == "xla":
         import torch_xla
+        import torch_xla.backends
         torch_xla.backends.set_mat_mul_precision("highest")
         device = torch_xla.device()
     else:
