@@ -5,7 +5,8 @@ import numpy as np
 import torch.nn.functional as F
 
 from lm_steer.utils import set_seed
-from .model_utils import find_max_subspans
+from transformers import StoppingCriteriaList
+from .model_utils import find_max_subspans, XLAStepBarrier
 
 
 punctuations = [
@@ -167,12 +168,17 @@ class LMSteerBase(nn.Module):
         with torch.no_grad():
             inputs = self.tokenizer(
                 prompt, return_tensors="pt").to(self.device)
+            extra_kwargs = {}
+            if self.device.type == "xla":
+                extra_kwargs["stopping_criteria"] = StoppingCriteriaList(
+                    [XLAStepBarrier()])
             text = self.model.generate(
                 **inputs,
                 num_beams=num_beams, num_beam_groups=num_beam_groups,
                 do_sample=do_sample, temperature=temperature, top_p=top_p,
                 min_length=min_length, max_length=max_length,
                 pad_token_id=self.tokenizer.pad_token_id,
+                **extra_kwargs,
             )
             text = self.tokenizer.decode(text[0], skip_special_tokens=True)
 
