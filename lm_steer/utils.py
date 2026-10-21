@@ -1,4 +1,5 @@
 import random
+import sys
 import torch
 import numpy as np
 
@@ -20,6 +21,9 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
+    if "torch_xla" in sys.modules:
+        import torch_xla.core.xla_model as xm
+        xm.set_rng_state(seed)
 
 
 class RunningMean:
