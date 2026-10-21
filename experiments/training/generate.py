@@ -44,7 +44,7 @@ def main(args):
         args.rank, args.epsilon, args.init_var, args.low_resource_mode)
     model.to_device(device)
 
-    ckpt = torch.load(args.ckpt_name)
+    ckpt = torch.load(args.ckpt_name, weights_only=False)
     model.load_state_dict(ckpt[1])
 
     # predicting sentences
