@@ -22,6 +22,10 @@ def conditional_perplexity(generations_df, model, tokenizer, device='cuda', writ
     ct = 0
     if write_file is not None:
         fout = open(write_file, "w")
+    xla_sync = None
+    if device.type == "xla":
+        import torch_xla
+        xla_sync = torch_xla.sync
 
     # for every prompt
     for i, row in tqdm(generations_df.iterrows(), total=len(generations_df.index), desc='Evaluating PPL'):
@@ -30,6 +34,8 @@ def conditional_perplexity(generations_df, model, tokenizer, device='cuda', writ
         prompt_input_ids = tokenizer.encode(row.prompt['text'], return_tensors='pt').to(device)
         if not (prompt_input_ids.shape[1] == 1 and prompt_input_ids[0].tolist()[0] == tokenizer.bos_token_id): # this means unconditional, prompt is BOS token (verify)
             prompt_loss = model(prompt_input_ids, labels=prompt_input_ids)[0] * (prompt_input_ids.shape[1]-1)
+            if xla_sync is not None:
+                xla_sync()  # materialize the prompt forward once
             # print("in")
         else:
             prompt_loss = 0
@@ -44,6 +50,8 @@ def conditional_perplexity(generations_df, model, tokenizer, device='cuda', writ
             # print(f'{prompt}{gen}')
             # print(full_input_ids)
             full_loss = model(full_input_ids, labels=full_input_ids)[0] * (full_input_ids.shape[1]-1)
+            if xla_sync is not None:
+                xla_sync()  # one graph per sequence length, not per length pair
             loss = (full_loss - prompt_loss) / (full_input_ids.shape[1] - prompt_input_ids.shape[1])
 
             ppl = np.exp(loss.item())
