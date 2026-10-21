@@ -334,6 +334,12 @@ def main(generations_file, output_file, metrics, extra, device_name):
             fo.write(f'avg_max = {avg_max}, toxicity prob={toxic_probability}\n')
             print(f'avg_max = {avg_max}, toxicity prob={toxic_probability}\n')
 
+    if device_name == "xla":
+        import torch_xla.debug.metrics as met
+        compile_data = met.metric_data("CompileTime")
+        aten = {k: met.counter_value(k) for k in met.counter_names() if k.startswith("aten::")}
+        print(f"XLA_METRICS final compile={compile_data[0] if compile_data else 0} aten_fallbacks={aten}", flush=True)
+
     ### calculate diversity
     # dist-n
     if "dist-n" in metricset:

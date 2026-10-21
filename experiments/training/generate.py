@@ -4,13 +4,19 @@ import torch
 
 from lm_steer.arguments import parse_args
 from lm_steer.models.get_model import get_model
-from lm_steer.utils import get_device
+import time
+from lm_steer.utils import get_device, xla_metrics_line
 
 
 def generate(prompt_data, steer_values, tokenizer, model,
              prompt_num, prompt_length, num_beams, num_beam_groups,
              do_sample, temperature, top_p, device):
-    for _prompt in tqdm(prompt_data):
+    start_time = time.time()
+    for _prompt_i, _prompt in enumerate(tqdm(prompt_data)):
+        if args.xla and _prompt_i % 10 == 0:
+            print(xla_metrics_line(
+                f"prompt={_prompt_i} elapsed={time.time()-start_time:.1f}s"),
+                flush=True)
         _prompt["generations"] = []
         prompt_text = _prompt["prompt"]["text"]
         token_length = tokenizer(prompt_text,
@@ -71,6 +77,10 @@ def main(args):
     with open(args.output_file, "w") as f:
         for _prompt in prompt_data:
             f.write(json.dumps(_prompt) + "\n")
+    if args.xla:
+        import torch_xla.debug.metrics as met
+        print(xla_metrics_line("final"), flush=True)
+        print(met.metrics_report(), flush=True)
 
 
 if __name__ == "__main__":

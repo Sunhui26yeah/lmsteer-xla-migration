@@ -14,6 +14,18 @@ def get_device(args):
     return torch.device("cuda:0") if args.cuda else torch.device("cpu")
 
 
+def xla_metrics_line(tag=""):
+    import torch_xla.debug.metrics as met
+
+    def count(name):
+        data = met.metric_data(name)
+        return data[0] if data else 0
+    aten = {k: met.counter_value(k) for k in met.counter_names()
+            if k.startswith("aten::")}
+    return (f"XLA_METRICS {tag} compile={count('CompileTime')} "
+            f"execute={count('ExecuteTime')} aten_fallbacks={aten}")
+
+
 def set_seed(seed):
     if seed is None:
         return
