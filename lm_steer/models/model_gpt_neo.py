@@ -20,6 +20,7 @@ class Switching_GPTNeoModel(LMSteerBase):
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.init_var = init_var
         self.num_steers = num_steers
+        self.low_resource_mode = low_resource_mode
         self.device = torch.device("cpu")
         embed_dim = self.model.lm_head.weight.shape[1]
         vocab_size = self.model.lm_head.weight.shape[0]

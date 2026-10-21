@@ -198,7 +198,7 @@ class LMSteerBase(nn.Module):
     def regularization_term(self):
         return self.steer.regularization_term()
 
-    def forward(self, input_ids, attention_mask, steer_values):
+    def forward(self, input_ids, attention_mask, steer_values, labels=None):
         if self.low_resource_mode:
             fp16 = torch.float16
             steer_values = steer_values.to(fp16)
@@ -208,7 +208,7 @@ class LMSteerBase(nn.Module):
         output = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            labels=input_ids)
+            labels=input_ids if labels is None else labels)
         if self.low_resource_mode:
             fp32 = torch.float32
             self.steer.projector1.data = self.steer.projector1.to(fp32)

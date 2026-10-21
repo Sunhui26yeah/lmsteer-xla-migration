@@ -3,10 +3,14 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+try:
+    import torch_xla.core.xla_model as xm
+except ImportError:
+    xm = None
 
 from lm_steer.arguments import parse_args
 from lm_steer.models.get_model import get_model
-from lm_steer.utils import RunningMean
+from lm_steer.utils import RunningMean, get_device, xla_metrics_line
 
 from data import load_dataset
 
@@ -18,7 +22,7 @@ def main(args):
         shuffle=True)
     data_iter = iter(dataloader)
 
-    device = torch.device("cuda:0") if args.cuda else torch.device("cpu")
+    device = get_device(args)
     model, tokenizer = get_model(
         args.model_name, args.adapted_component, args.adaptor_class,
         args.num_steers,
@@ -28,7 +32,7 @@ def main(args):
     print("number of training steps:", args.n_steps)
     start_step = 0
     if os.path.exists(args.ckpt_name):
-        ckpt = torch.load(args.ckpt_name)
+        ckpt = torch.load(args.ckpt_name, weights_only=False)
         model.load_state_dict(ckpt[1])
         start_step = ckpt[2]
         print(f"resume training from {start_step}")
@@ -52,8 +56,19 @@ def main(args):
         if args.dummy_steer is not None:
             batch_stance[:, args.dummy_steer] = 1
         batch_text = batch["text"]
-        tokenized = tokenizer(batch_text, padding=True,
-                              max_length=args.max_length, truncation=True)
+        labels = None
+        if args.xla:
+            # static shape on XLA: pad to max_length, but keep the loss of
+            # padding=True by ignoring positions beyond the longest sequence
+            tokenized = tokenizer(batch_text, padding="max_length",
+                                  max_length=args.max_length, truncation=True)
+            longest = max(sum(_m) for _m in tokenized["attention_mask"])
+            labels = torch.LongTensor(tokenized["input_ids"])
+            labels[:, longest:] = -100
+            labels = labels.to(device)
+        else:
+            tokenized = tokenizer(batch_text, padding=True,
+                                  max_length=args.max_length, truncation=True)
         input_ids = torch.LongTensor(tokenized["input_ids"]).to(device)
 
         optimizer.zero_grad()
@@ -65,7 +80,7 @@ def main(args):
             ):
                 loss = model(
                     input_ids, attention_mask,
-                    batch_stance.float()
+                    batch_stance.float(), labels
                 ).loss
                 regularization_term = model.regularization_term()
             scaler.scale(loss + args.regularization * regularization_term
@@ -75,22 +90,34 @@ def main(args):
         else:
             loss = model(
                 input_ids, attention_mask,
-                batch_stance.float()
+                batch_stance.float(), labels
             ).loss
             regularization_term = model.regularization_term()
             (loss + args.regularization * regularization_term).backward()
             optimizer.step()
+        if args.xla:
+            xm.mark_step()
 
         loss_mean.update(loss)
         pbar.set_description(
             f"{loss_mean.value}, {regularization_term.item()}")
         if (step_i+1) % args.log_step == 0:
             print(pbar.desc, flush=True)
+            if args.xla:
+                print(xla_metrics_line(f"step={step_i+1}"), flush=True)
+        if args.xla and step_i == start_step:
+            print(f"DEVICES params={[p.device for p in model.parameters()]}"
+                  f" lm={next(model.model.transformer.parameters()).device}"
+                  f" input_ids={input_ids.device}", flush=True)
 
     torch.save([
         args, model.state_dict(),
         max(args.n_steps, start_step)
     ], args.ckpt_name)
+    if args.xla:
+        import torch_xla.debug.metrics as met
+        print(xla_metrics_line("final"), flush=True)
+        print(met.metrics_report(), flush=True)
 
 
 if __name__ == "__main__":

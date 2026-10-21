@@ -74,10 +74,10 @@ def conditional_perplexity(generations_df, model, tokenizer, device='cuda', writ
     return np.nanmean(perplexities), np.exp(total_nll/total_tokens)
 
 
-def sentiment_classify(generations_df, sentiment_file=None):
+def sentiment_classify(generations_df, sentiment_file=None, device=0):
 
     # score generations and write to sentiment.jsonl
-    classifier = pipeline('sentiment-analysis', device=0)
+    classifier = pipeline('sentiment-analysis', device=device)
     # classifier = pipeline(model='siebert/sentiment-roberta-large-english')
     print("writing outputs to ", str(sentiment_file))
     if sentiment_file is not None:
@@ -256,7 +256,8 @@ def distinctness(generations_df):
 @click.option('--output_file', required=True, type=str, help='filename to write outputs')
 @click.option('--metrics', required=True, type=str, help='which metrics to compute, write comma separeted, ppl-own,ppl-big,cola,self-bleu,zipf,repetition,dist-n,sentiment')
 @click.option('--extra', required=False, type=str, help='extra params like which topic category or keyword file')
-def main(generations_file, output_file, metrics, extra):
+@click.option('--device', 'device_name', required=False, type=str, default=None, help='"xla" to run the scoring models on the XLA device (TPU)')
+def main(generations_file, output_file, metrics, extra, device_name):
     assert os.path.exists(generations_file)
     output_dir = Path(os.path.dirname(generations_file))
     if generations_file.endswith(".jsonl"):
@@ -267,7 +268,13 @@ def main(generations_file, output_file, metrics, extra):
             generations_df = pd.DataFrame(generations_df)
 
     metricset = set(metrics.strip().lower().split(","))
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if device_name == "xla":
+        import torch_xla
+        import torch_xla.backends
+        torch_xla.backends.set_mat_mul_precision("highest")
+        device = torch_xla.device()
+    else:
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ### calculate quality metrics
     # Fluency
     fo = open(output_dir / output_file, 'w') #just creating the file
@@ -315,7 +322,7 @@ def main(generations_file, output_file, metrics, extra):
 
     if 'sentiment' in metricset:
         print("sentiment") #c1
-        sentiment_accuracy, sentiment_std = sentiment_classify(generations_df, sentiment_file=output_dir / (output_file+".sentiment"))
+        sentiment_accuracy, sentiment_std = sentiment_classify(generations_df, sentiment_file=output_dir / (output_file+".sentiment"), device=device if device_name == "xla" else 0)
         with open(output_dir / output_file, 'a') as fo:
             fo.write(f'mean sentiment accuracy = {sentiment_accuracy}, {sentiment_std}\n')
             print(f'mean sentiment accuracy = {sentiment_accuracy}, {sentiment_std}')
@@ -327,6 +334,12 @@ def main(generations_file, output_file, metrics, extra):
         with open(output_dir / output_file, 'a') as fo:
             fo.write(f'avg_max = {avg_max}, toxicity prob={toxic_probability}\n')
             print(f'avg_max = {avg_max}, toxicity prob={toxic_probability}\n')
+
+    if device_name == "xla":
+        import torch_xla.debug.metrics as met
+        compile_data = met.metric_data("CompileTime")
+        aten = {k: met.counter_value(k) for k in met.counter_names() if k.startswith("aten::")}
+        print(f"XLA_METRICS final compile={compile_data[0] if compile_data else 0} aten_fallbacks={aten}", flush=True)
 
     ### calculate diversity
     # dist-n
