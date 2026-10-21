@@ -1,6 +1,19 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from transformers import StoppingCriteria
+
+
+class XLAStepBarrier(StoppingCriteria):
+    """Never stops generation; cuts the lazy XLA graph once per decoding
+    step (HF calls stopping criteria after the new token and the updated
+    KV cache exist), so each step starts from materialized device data."""
+
+    def __call__(self, input_ids, scores, **kwargs):
+        import torch_xla
+        torch_xla.sync()
+        return torch.zeros(input_ids.shape[0], dtype=torch.bool,
+                           device=input_ids.device)
 
 
 class Hack_no_grad(nn.Module):
