@@ -10,7 +10,7 @@ except ImportError:
 
 from lm_steer.arguments import parse_args
 from lm_steer.models.get_model import get_model
-from lm_steer.utils import RunningMean, get_device
+from lm_steer.utils import RunningMean, get_device, xla_metrics_line
 
 from data import load_dataset
 
@@ -103,11 +103,21 @@ def main(args):
             f"{loss_mean.value}, {regularization_term.item()}")
         if (step_i+1) % args.log_step == 0:
             print(pbar.desc, flush=True)
+            if args.xla:
+                print(xla_metrics_line(f"step={step_i+1}"), flush=True)
+        if args.xla and step_i == start_step:
+            print(f"DEVICES params={[p.device for p in model.parameters()]}"
+                  f" lm={next(model.model.transformer.parameters()).device}"
+                  f" input_ids={input_ids.device}", flush=True)
 
     torch.save([
         args, model.state_dict(),
         max(args.n_steps, start_step)
     ], args.ckpt_name)
+    if args.xla:
+        import torch_xla.debug.metrics as met
+        print(xla_metrics_line("final"), flush=True)
+        print(met.metrics_report(), flush=True)
 
 
 if __name__ == "__main__":
