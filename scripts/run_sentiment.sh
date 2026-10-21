@@ -5,6 +5,7 @@
 MODE=$1
 OUT=$2
 DEV=${3:---cuda}
+EVAL_DEV=""; [ "$DEV" = "--xla" ] && EVAL_DEV="--device xla"
 mkdir -p $OUT
 if [ "$MODE" = smoke ]; then CAPS_T="--n_steps 200 --log_step 10"; CAPS_G="--eval_size 20";
 else CAPS_T="--n_steps 1000 --log_step 10"; CAPS_G=""; fi
@@ -28,7 +29,7 @@ t2=$(date +%s)
 python experiments/evaluation/evaluate.py \
     --generations_file $OUT/predictions-negative_5.jsonl \
     --metrics sentiment,ppl-big,dist-n \
-    --output_file result_stats_negative_5.txt > $OUT/evaluate.log 2>&1
+    --output_file result_stats_negative_5.txt $EVAL_DEV > $OUT/evaluate.log 2>&1
 rc=$?; echo "EVAL_EXIT $rc $(( $(date +%s)-t2 ))s $(date -u +%FT%TZ)"
 echo "ALL_DONE $(( $(date +%s)-t0 ))s"
 exit $rc
