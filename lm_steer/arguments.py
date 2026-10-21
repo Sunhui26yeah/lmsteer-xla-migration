@@ -16,6 +16,8 @@ def parse_args():
     parser.add_argument("--num_steers", type=int, default=10)
     parser.add_argument("--temperature", type=int, default=1)
     parser.add_argument("--cuda", action="store_true")
+    parser.add_argument("--xla", action="store_true",
+                        help="run on the XLA device (TPU) via torch_xla")
     parser.add_argument("--low_resource_mode", action="store_true")
 
     # Data related
@@ -52,6 +54,8 @@ def parse_args():
 
     args = parser.parse_args()
 
+    if args.xla:
+        import torch_xla  # noqa: F401  (so that set_seed also seeds the XLA RNG)
     set_seed(args.seed)
 
     print("arguments:")
