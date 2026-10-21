@@ -1,5 +1,6 @@
 """XLA replacements for two ops inside HF generate; both return exactly what
 the original functions return and fall back to them for non-XLA tensors."""
+import math
 import torch
 from transformers import pytorch_utils
 from transformers.generation import logits_process, stopping_criteria
@@ -7,6 +8,7 @@ from transformers.generation import utils as generation_utils
 
 _original_isin = pytorch_utils.isin_mps_friendly
 _original_top_p_call = logits_process.TopPLogitsWarper.__call__
+_original_min_length_call = logits_process.MinLengthLogitsProcessor.__call__
 _patched = False
 
 
@@ -35,6 +37,20 @@ def _top_p_call_xla(self, input_ids, scores):
     return scores.masked_fill(indices_to_remove, self.filter_value)
 
 
+def _min_length_call_xla(self, input_ids, scores):
+    # same as MinLengthLogitsProcessor.__call__, but the EOS mask over the
+    # vocabulary is built once per processor instead of on every step
+    if scores.device.type != "xla":
+        return _original_min_length_call(self, input_ids, scores)
+    if getattr(self, "_xla_eos_mask", None) is None:
+        vocab_tensor = torch.arange(scores.shape[-1], device=scores.device)
+        self._xla_eos_mask = _isin_xla(vocab_tensor, self.eos_token_id)
+    scores_processed = scores.clone()
+    if input_ids.shape[-1] < self.min_length:
+        scores_processed = torch.where(self._xla_eos_mask, -math.inf, scores)
+    return scores_processed
+
+
 def patch_hf_generation_for_xla():
     global _patched
     if _patched:
@@ -42,4 +58,5 @@ def patch_hf_generation_for_xla():
     for module in (logits_process, stopping_criteria, generation_utils):
         module.isin_mps_friendly = _isin_xla
     logits_process.TopPLogitsWarper.__call__ = _top_p_call_xla
+    logits_process.MinLengthLogitsProcessor.__call__ = _min_length_call_xla
     _patched = True
