@@ -4,6 +4,7 @@ import torch
 
 from lm_steer.arguments import parse_args
 from lm_steer.models.get_model import get_model
+from lm_steer.utils import get_device
 
 
 def generate(prompt_data, steer_values, tokenizer, model,
@@ -37,7 +38,7 @@ def generate(prompt_data, steer_values, tokenizer, model,
 
 
 def main(args):
-    device = torch.device("cuda:0") if args.cuda else torch.device("cpu")
+    device = get_device(args)
     model, tokenizer = get_model(
         args.model_name, args.adapted_component, args.adaptor_class,
         args.num_steers,

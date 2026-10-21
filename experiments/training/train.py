@@ -6,7 +6,7 @@ from torch.optim import Adam
 
 from lm_steer.arguments import parse_args
 from lm_steer.models.get_model import get_model
-from lm_steer.utils import RunningMean
+from lm_steer.utils import RunningMean, get_device
 
 from data import load_dataset
 
@@ -18,7 +18,7 @@ def main(args):
         shuffle=True)
     data_iter = iter(dataloader)
 
-    device = torch.device("cuda:0") if args.cuda else torch.device("cpu")
+    device = get_device(args)
     model, tokenizer = get_model(
         args.model_name, args.adapted_component, args.adaptor_class,
         args.num_steers,

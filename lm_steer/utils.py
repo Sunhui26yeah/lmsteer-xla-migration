@@ -3,6 +3,16 @@ import torch
 import numpy as np
 
 
+def get_device(args):
+    if getattr(args, "xla", False):
+        import torch_xla
+        # match CUDA fp32 matmuls (TF32 off by default) instead of the TPU's
+        # reduced-precision default for f32
+        torch_xla.backends.set_mat_mul_precision("highest")
+        return torch_xla.device()
+    return torch.device("cuda:0") if args.cuda else torch.device("cpu")
+
+
 def set_seed(seed):
     if seed is None:
         return
