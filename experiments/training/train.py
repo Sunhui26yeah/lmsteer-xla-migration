@@ -3,6 +3,10 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+try:
+    import torch_xla.core.xla_model as xm
+except ImportError:
+    xm = None
 
 from lm_steer.arguments import parse_args
 from lm_steer.models.get_model import get_model
@@ -91,6 +95,8 @@ def main(args):
             regularization_term = model.regularization_term()
             (loss + args.regularization * regularization_term).backward()
             optimizer.step()
+        if args.xla:
+            xm.mark_step()
 
         loss_mean.update(loss)
         pbar.set_description(
